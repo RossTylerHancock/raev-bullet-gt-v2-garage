@@ -1,5 +1,5 @@
 import React from 'react';
-import { Zap, BatteryCharging, ShieldAlert, Cpu, Wrench, Search, Sparkles, Compass, Layers } from 'lucide-react';
+import { Zap, BatteryCharging, ShieldAlert, Cpu, Wrench, Search, Sparkles, Compass, Layers, Mail } from 'lucide-react';
 
 export default function Header({ activeTab, setActiveTab, unlockedMode, setUnlockedMode }) {
   return (
@@ -156,6 +156,12 @@ export default function Header({ activeTab, setActiveTab, unlockedMode, setUnloc
           onClick={() => setActiveTab('ai-research')}
         >
           <Sparkles size={16} color="#34d399" /> AI Bike Researcher
+        </button>
+        <button 
+          className={`nav-tab ${activeTab === 'contact' ? 'active' : ''}`}
+          onClick={() => setActiveTab('contact')}
+        >
+          <Mail size={16} color="#10b981" /> Contact Ross
         </button>
       </div>
     </header>

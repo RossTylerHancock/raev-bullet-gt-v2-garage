@@ -9,6 +9,7 @@ import CommunityMods from './components/CommunityMods';
 import DiagnosticTool from './components/DiagnosticTool';
 import AIResearchAssistant from './components/AIResearchAssistant';
 import PartsCatalog from './components/PartsCatalog';
+import ContactPage from './components/ContactPage';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview');
@@ -72,6 +73,10 @@ export default function App() {
 
         {activeTab === 'ai-research' && (
           <AIResearchAssistant />
+        )}
+
+        {activeTab === 'contact' && (
+          <ContactPage />
         )}
       </main>
 
