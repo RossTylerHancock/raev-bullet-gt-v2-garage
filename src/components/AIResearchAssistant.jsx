@@ -1,16 +1,39 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { RAEV_BIKE_DATA } from '../data/bikeData';
-import { Sparkles, Send, Bot, User, HelpCircle, CheckCircle } from 'lucide-react';
+import { Sparkles, Send, Bot, User, HelpCircle, CheckCircle, Lock, Unlock, KeyRound, ShieldAlert } from 'lucide-react';
 
 export default function AIResearchAssistant() {
+  const [isUnlocked, setIsUnlocked] = useState(() => {
+    return localStorage.getItem('raev_ai_unlocked') === 'true';
+  });
+  const [pinInput, setPinInput] = useState('');
+  const [pinError, setPinError] = useState('');
+
   const [messages, setMessages] = useState([
     {
       sender: 'ai',
-      text: "Hello! I am your dedicated RAEV Bullet GT V2 AI Research & Knowledge Assistant. Ask me anything about replacement parts (forks, shocks, handlebars, grips, tires, brakes, freewheels, throttles, bags), wiring pinouts, voltage maps, P-settings (P08 unlock), or battery maintenance for your Metallic Green ebike!"
+      text: "Hello Ross! I am your dedicated RAEV Bullet GT V2 AI Research & Knowledge Assistant. Ask me anything about replacement parts (forks, shocks, handlebars, grips, tires, brakes, freewheels, throttles, bags), wiring pinouts, voltage maps, P-settings (P08 unlock), or battery maintenance for your Metallic Green ebike!"
     }
   ]);
   const [inputQuery, setInputQuery] = useState('');
   const [isThinking, setIsThinking] = useState(false);
+
+  const handleUnlock = (e) => {
+    e.preventDefault();
+    if (pinInput.trim() === '3520') {
+      setIsUnlocked(true);
+      localStorage.setItem('raev_ai_unlocked', 'true');
+      setPinError('');
+      setPinInput('');
+    } else {
+      setPinError('Incorrect PIN. Access restricted to Ross.');
+    }
+  };
+
+  const handleLockTool = () => {
+    setIsUnlocked(false);
+    localStorage.removeItem('raev_ai_unlocked');
+  };
 
   const sampleQuestions = [
     "What replacement front forks can I use?",
@@ -242,23 +265,157 @@ https://www.youtube.com/watch?v=_i-d3wGp6AQ`;
 For full search across all 35+ items, click the **"Verified Parts Catalog"** tab in the top navigation bar!`;
   };
 
+  if (!isUnlocked) {
+    return (
+      <div style={{ maxWidth: '600px', margin: '40px auto 0 auto', animation: 'fadeIn 0.3s ease-in-out' }}>
+        <div className="card" style={{
+          background: 'linear-gradient(135deg, rgba(5, 14, 12, 0.95), rgba(6, 78, 59, 0.4))',
+          border: '1px solid rgba(16, 185, 129, 0.4)',
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6)',
+          textAlign: 'center',
+          padding: '36px 28px'
+        }}>
+          <div style={{
+            width: '64px',
+            height: '64px',
+            borderRadius: '20px',
+            background: 'linear-gradient(135deg, #10b981, #047857)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 20px auto',
+            boxShadow: '0 0 30px rgba(16, 185, 129, 0.5)'
+          }}>
+            <Lock size={32} color="#ffffff" />
+          </div>
+
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid #10b981', padding: '4px 12px', borderRadius: '9999px', marginBottom: '14px' }}>
+            <ShieldAlert size={14} color="#34d399" />
+            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#34d399', letterSpacing: '0.05em' }}>
+              OWNER ACCESS RESTRICTED
+            </span>
+          </div>
+
+          <h2 style={{ fontSize: '1.6rem', fontWeight: 800, color: '#f3f4f6', marginBottom: '8px' }}>
+            Ross Owner Access Required
+          </h2>
+          <p style={{ color: '#9ca3af', fontSize: '0.9rem', lineHeight: '1.6', marginBottom: '24px', maxWidth: '460px', margin: '0 auto 24px auto' }}>
+            To protect dedicated AI tokens and API quota from public visitors, access to the Deep AI Researcher is locked. Enter your 4-digit PIN to proceed.
+          </p>
+
+          {pinError && (
+            <div style={{
+              background: 'rgba(239, 68, 68, 0.15)',
+              border: '1px solid #ef4444',
+              borderRadius: '8px',
+              padding: '10px 14px',
+              marginBottom: '16px',
+              color: '#f87171',
+              fontSize: '0.85rem',
+              fontWeight: 600
+            }}>
+              {pinError}
+            </div>
+          )}
+
+          <form onSubmit={handleUnlock} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+            <div style={{ position: 'relative', width: '100%', maxWidth: '280px' }}>
+              <KeyRound size={18} color="#6b7280" style={{ position: 'absolute', left: '14px', top: '14px' }} />
+              <input
+                type="password"
+                maxLength={6}
+                placeholder="Enter 4-Digit PIN"
+                value={pinInput}
+                onChange={(e) => setPinInput(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '12px 14px 12px 42px',
+                  borderRadius: '10px',
+                  background: 'rgba(3, 9, 8, 0.9)',
+                  border: '1px solid rgba(16, 185, 129, 0.4)',
+                  color: '#ffffff',
+                  fontSize: '1.1rem',
+                  letterSpacing: '0.2em',
+                  textAlign: 'center',
+                  outline: 'none'
+                }}
+              />
+            </div>
+
+            <button
+              type="submit"
+              style={{
+                width: '100%',
+                maxWidth: '280px',
+                padding: '12px',
+                borderRadius: '10px',
+                background: 'linear-gradient(135deg, #10b981, #059669)',
+                color: '#ffffff',
+                fontWeight: 700,
+                fontSize: '0.95rem',
+                border: 'none',
+                cursor: 'pointer',
+                boxShadow: '0 4px 20px rgba(16, 185, 129, 0.4)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              <Unlock size={18} /> Unlock AI Researcher
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Banner */}
-      <div className="glass-card" style={{ padding: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{
-            background: 'rgba(16, 185, 129, 0.15)',
-            padding: '10px',
-            borderRadius: '10px',
-            border: '1px solid rgba(16, 185, 129, 0.3)'
-          }}>
-            <Sparkles size={24} color="#34d399" />
+      <div className="glass-card" style={{ padding: '20px 24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{
+              background: 'rgba(16, 185, 129, 0.15)',
+              padding: '10px',
+              borderRadius: '10px',
+              border: '1px solid rgba(16, 185, 129, 0.3)'
+            }}>
+              <Sparkles size={24} color="#34d399" />
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>Deep AI Bike Research Assistant</h2>
+                <span className="badge badge-emerald" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <Unlock size={12} /> OWNER UNLOCKED
+                </span>
+              </div>
+              <p style={{ fontSize: '0.85rem', color: '#9ca3af', marginTop: '2px' }}>
+                Pre-trained with complete RAEV Bullet GT V2 owner manual & 35+ verified parts dataset.
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>Deep AI Bike Research Assistant</h2>
-            <p style={{ fontSize: '0.85rem', color: '#9ca3af' }}>Pre-trained with complete RAEV Bullet GT V2 owner manual & 35+ verified parts dataset.</p>
-          </div>
+
+          <button
+            onClick={handleLockTool}
+            style={{
+              background: 'rgba(255, 255, 255, 0.06)',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              color: '#9ca3af',
+              padding: '6px 12px',
+              borderRadius: '8px',
+              fontSize: '0.78rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            <Lock size={14} /> Lock AI Tool
+          </button>
         </div>
       </div>
 
