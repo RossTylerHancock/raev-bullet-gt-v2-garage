@@ -1,10 +1,63 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Wrench, CheckCircle, Search, Filter, ShieldCheck, Zap, Compass, Tag, ExternalLink, ShoppingBag, X, Maximize2 } from 'lucide-react';
+import { PART_CATEGORIES } from '../data/partsCategories.js';
+
+function linkHostname(value) {
+  try {
+    return new URL(value).hostname;
+  } catch {
+    return 'External website';
+  }
+}
 
 export default function PartsCatalog() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [modalImage, setModalImage] = useState(null); // { url, title, price, buyUrl, category, svg }
+  const [researchLinks, setResearchLinks] = useState([]);
+  const [linksLoading, setLinksLoading] = useState(true);
+  const [linksError, setLinksError] = useState('');
+  const [isOwner, setIsOwner] = useState(false);
+  const [confirmRemoveId, setConfirmRemoveId] = useState(null);
+  const [removingId, setRemovingId] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      fetch('/api/parts-links').then(response => response.ok ? response.json() : Promise.reject(new Error('Saved research links could not be loaded.'))),
+      fetch('/api/auth/status', { credentials: 'same-origin' }).then(response => response.ok ? response.json() : { authenticated: false })
+    ]).then(([linksResult, authResult]) => {
+      if (!active) return;
+      setResearchLinks(Array.isArray(linksResult.links) ? linksResult.links : []);
+      setIsOwner(Boolean(authResult.authenticated));
+    }).catch(error => {
+      if (active) setLinksError(error.message);
+    }).finally(() => {
+      if (active) setLinksLoading(false);
+    });
+    return () => { active = false; };
+  }, []);
+
+  const removeResearchLink = async id => {
+    if (removingId) return;
+    setRemovingId(id);
+    setLinksError('');
+    try {
+      const response = await fetch(`/api/parts-links/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' }
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || 'The saved link could not be removed.');
+      setResearchLinks(previous => previous.filter(link => link.id !== id));
+      setConfirmRemoveId(null);
+    } catch (error) {
+      setLinksError(error.message);
+    } finally {
+      setRemovingId(null);
+    }
+  };
 
   // Custom high-resolution SVG product illustrations for 100% reliable, distinct component visuals
   const productSvgs = {
@@ -749,7 +802,7 @@ export default function PartsCatalog() {
     }
   ];
 
-  const categories = ['All', 'Tires & Tubes', 'Brakes & Rotors', 'Suspension', 'Drivetrain', 'Cockpit & Throttles', 'Handlebars & Stem', 'Electrical & Batteries', 'Storage & Accessories'];
+  const categories = ['All', ...PART_CATEGORIES];
 
   const filteredParts = partsCatalog.filter(part => {
     const matchesCategory = selectedCategory === 'All' || part.category === selectedCategory;
@@ -757,6 +810,14 @@ export default function PartsCatalog() {
                           part.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           part.whyFits.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           part.compatibility.toLowerCase().includes(searchTerm.toLowerCase());
+    return matchesCategory && matchesSearch;
+  });
+
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const filteredResearchLinks = researchLinks.filter(link => {
+    const matchesCategory = selectedCategory === 'All' || link.category === selectedCategory;
+    const matchesSearch = !normalizedSearch || link.title.toLowerCase().includes(normalizedSearch) ||
+      link.url.toLowerCase().includes(normalizedSearch) || link.category.toLowerCase().includes(normalizedSearch);
     return matchesCategory && matchesSearch;
   });
 
@@ -826,6 +887,53 @@ export default function PartsCatalog() {
           </div>
         </div>
       </div>
+
+      {/* Owner-curated external research links use the same bike-part taxonomy. */}
+      <section className="glass-card" style={{ padding: '24px', border: '1px solid rgba(245,158,11,0.28)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap', marginBottom: filteredResearchLinks.length ? 16 : 0 }}>
+          <div>
+            <div style={{ color: '#fbbf24', fontSize: '0.72rem', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 5 }}>Owner-saved research links</div>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#f3f4f6' }}>External Parts & Component Leads</h3>
+            <p style={{ color: '#9ca3af', fontSize: '0.8rem', marginTop: 5, maxWidth: 760 }}>Useful websites saved by the owner from approved AI research. These listings are supplementary and may change; confirm current price, availability, dimensions, and fitment before purchasing.</p>
+          </div>
+          <span style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', color: '#fbbf24', borderRadius: 9999, padding: '5px 10px', fontSize: '0.7rem', fontWeight: 700 }}>{researchLinks.length} SAVED</span>
+        </div>
+
+        {linksLoading && <p style={{ color: '#9ca3af', fontSize: '0.8rem' }}>Loading saved research links…</p>}
+        {linksError && <div style={{ color: '#f87171', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '9px 11px', fontSize: '0.78rem', marginTop: 12 }}>{linksError}</div>}
+        {!linksLoading && !linksError && researchLinks.length === 0 && <p style={{ color: '#6b7280', fontSize: '0.8rem', marginTop: 10 }}>No research links have been saved yet. The owner can save useful sources directly from the AI Researcher.</p>}
+        {!linksLoading && researchLinks.length > 0 && filteredResearchLinks.length === 0 && <p style={{ color: '#6b7280', fontSize: '0.8rem', marginTop: 10 }}>No saved research links match the selected category or search.</p>}
+
+        {filteredResearchLinks.length > 0 && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
+            {filteredResearchLinks.map(link => (
+              <article key={link.id} style={{ display: 'flex', flexDirection: 'column', gap: 10, background: 'rgba(0,0,0,0.24)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 10, padding: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                  <span className="badge badge-emerald">{link.category}</span>
+                  <span style={{ color: '#fbbf24', fontSize: '0.64rem', fontWeight: 800 }}>EXTERNAL LEAD</span>
+                </div>
+                <div>
+                  <h4 style={{ color: '#f3f4f6', fontSize: '0.94rem', fontWeight: 750, overflowWrap: 'anywhere' }}>{link.title}</h4>
+                  <div style={{ color: '#6b7280', fontSize: '0.7rem', marginTop: 3, overflowWrap: 'anywhere' }}>{linkHostname(link.url)}</div>
+                </div>
+                <div style={{ color: '#d1d5db', fontSize: '0.75rem', lineHeight: 1.5, background: 'rgba(245,158,11,0.07)', borderRadius: 7, padding: 8 }}>Owner-saved web listing. Compatibility and availability are not internally verified.</div>
+                <div style={{ color: '#6b7280', fontSize: '0.68rem' }}>Saved {new Date(link.savedAt).toLocaleDateString()}</div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 'auto' }}>
+                  <a href={link.url} target="_blank" rel="noopener noreferrer" className="btn-primary" style={{ flex: 1, minWidth: 150, justifyContent: 'center', padding: '8px 10px', fontSize: '0.76rem', textDecoration: 'none' }}>Visit website <ExternalLink size={13} /></a>
+                  {isOwner && confirmRemoveId !== link.id && <button type="button" onClick={() => setConfirmRemoveId(link.id)} style={{ background: 'transparent', border: '1px solid rgba(239,68,68,0.35)', color: '#f87171', borderRadius: 7, padding: '7px 9px', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 700 }}>Remove</button>}
+                  {isOwner && confirmRemoveId === link.id && (
+                    <div style={{ display: 'flex', gap: 6, flexBasis: '100%', alignItems: 'center' }}>
+                      <span style={{ color: '#fca5a5', fontSize: '0.7rem', flex: 1 }}>Remove this public link?</span>
+                      <button type="button" disabled={removingId === link.id} onClick={() => removeResearchLink(link.id)} style={{ background: '#b91c1c', border: 'none', color: '#fff', borderRadius: 6, padding: '6px 8px', cursor: removingId === link.id ? 'wait' : 'pointer', fontSize: '0.7rem', fontWeight: 700 }}>{removingId === link.id ? 'Removing…' : 'Confirm'}</button>
+                      <button type="button" disabled={removingId === link.id} onClick={() => setConfirmRemoveId(null)} style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.15)', color: '#9ca3af', borderRadius: 6, padding: '6px 8px', cursor: 'pointer', fontSize: '0.7rem' }}>Cancel</button>
+                    </div>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* Parts Grid with Product-Specific Component Thumbnails */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '20px' }}>

@@ -3,6 +3,7 @@ import { createReadStream, existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { extname, join, normalize, resolve } from 'node:path';
+import { createPartsLinkStore } from './partsLinks.js';
 import { researchQuestion } from './research.js';
 
 const SESSION_COOKIE = 'raev_owner_session';
@@ -135,8 +136,10 @@ export function createRaevServer(options = {}) {
   const sessionSecret = options.sessionSecret || process.env.SESSION_SECRET || randomBytes(32).toString('hex');
   const distDir = resolve(options.distDir || 'dist');
   const research = options.research || researchQuestion;
+  const partsLinks = options.partsLinks || createPartsLinkStore(options.partsLinkStoreOptions);
   const allowUnlock = createRateLimiter({ limit: 8, windowMs: 15 * 60 * 1000 });
   const allowResearch = createRateLimiter({ limit: 30, windowMs: 10 * 60 * 1000 });
+  const allowLinkWrites = createRateLimiter({ limit: 30, windowMs: 10 * 60 * 1000 });
 
   return createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -158,6 +161,10 @@ export function createRaevServer(options = {}) {
       if (req.method === 'GET' && url.pathname === '/api/auth/status') {
         const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
         return sendJson(res, 200, { authenticated: validSession(token, sessionSecret) });
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/parts-links') {
+        return sendJson(res, 200, { links: await partsLinks.list() });
       }
 
       if (req.method === 'POST' && url.pathname === '/api/auth/unlock') {
@@ -199,6 +206,32 @@ export function createRaevServer(options = {}) {
 
         const result = await research({ question: question.trim(), allowWeb });
         return sendJson(res, 200, result);
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/parts-links') {
+        const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+        if (!validSession(token, sessionSecret)) {
+          return sendJson(res, 401, { error: 'Owner access is required.', code: 'not_authenticated' });
+        }
+        if (!allowLinkWrites(clientKey(req))) {
+          return sendJson(res, 429, { error: 'Saved-link limit reached. Try again shortly.', code: 'rate_limited' });
+        }
+        const result = await partsLinks.add(await readJson(req));
+        return sendJson(res, result.created ? 201 : 200, result);
+      }
+
+      const partsLinkMatch = url.pathname.match(/^\/api\/parts-links\/([a-zA-Z0-9-]{1,100})$/);
+      if (req.method === 'DELETE' && partsLinkMatch) {
+        const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+        if (!validSession(token, sessionSecret)) {
+          return sendJson(res, 401, { error: 'Owner access is required.', code: 'not_authenticated' });
+        }
+        if (!allowLinkWrites(clientKey(req))) {
+          return sendJson(res, 429, { error: 'Saved-link limit reached. Try again shortly.', code: 'rate_limited' });
+        }
+        const removed = await partsLinks.remove(partsLinkMatch[1]);
+        if (!removed) return sendJson(res, 404, { error: 'Saved link not found.', code: 'link_not_found' });
+        return sendJson(res, 200, { removed: true });
       }
 
       if (isApi) {

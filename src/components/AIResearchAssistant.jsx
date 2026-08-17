@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Bot, CheckCircle, HelpCircle, KeyRound, Lock, Search, Send, ShieldAlert, Sparkles, Unlock, User } from 'lucide-react';
+import { PART_CATEGORIES, suggestPartCategory } from '../data/partsCategories.js';
 
 const INITIAL_MESSAGE = {
   sender: 'ai',
@@ -31,6 +32,7 @@ export default function AIResearchAssistant() {
   const [messages, setMessages] = useState([INITIAL_MESSAGE]);
   const [inputQuery, setInputQuery] = useState('');
   const [isThinking, setIsThinking] = useState(false);
+  const [sourceSaveState, setSourceSaveState] = useState({});
   const conversationRef = useRef(null);
 
   useEffect(() => {
@@ -83,6 +85,42 @@ export default function AIResearchAssistant() {
     await apiRequest('/api/auth/lock', { method: 'POST', body: '{}' }).catch(() => {});
     setIsUnlocked(false);
     setMessages([INITIAL_MESSAGE]);
+    setSourceSaveState({});
+  };
+
+  const updateSourceSaveState = (key, changes) => {
+    setSourceSaveState(previous => ({
+      ...previous,
+      [key]: { ...previous[key], ...changes }
+    }));
+  };
+
+  const openSourceSave = (key, source, question) => {
+    updateSourceSaveState(key, {
+      status: 'choosing',
+      category: suggestPartCategory(`${question} ${source.title}`),
+      error: ''
+    });
+  };
+
+  const saveSource = async (key, source) => {
+    const category = sourceSaveState[key]?.category;
+    if (!category || sourceSaveState[key]?.status === 'saving') return;
+    updateSourceSaveState(key, { status: 'saving', error: '' });
+    try {
+      const result = await apiRequest('/api/parts-links', {
+        method: 'POST',
+        body: JSON.stringify({ title: source.title, url: source.url, category })
+      });
+      updateSourceSaveState(key, {
+        status: 'saved',
+        category: result.link.category,
+        created: result.created
+      });
+    } catch (error) {
+      if (error.status === 401) setIsUnlocked(false);
+      updateSourceSaveState(key, { status: 'error', error: error.message });
+    }
   };
 
   const submitResearch = async (question, allowWeb = false, confirmationIndex = null) => {
@@ -124,6 +162,7 @@ export default function AIResearchAssistant() {
         {
           sender: 'ai',
           text: result.answer,
+          question: question.trim(),
           sources: result.sources,
           usedWeb: result.usedWeb,
           externalConfirmation: result.needsExternalResearch ? {
@@ -226,7 +265,27 @@ export default function AIResearchAssistant() {
                 {message.sources?.length > 0 && (
                   <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
                     <strong style={{ fontSize: '0.76rem', color: '#9ca3af' }}>Supplementary sources</strong>
-                    {message.sources.map(source => <a key={source.url} href={source.url} target="_blank" rel="noreferrer" style={{ display: 'block', color: '#60a5fa', fontSize: '0.78rem', marginTop: 5, overflowWrap: 'anywhere' }}>{source.title}</a>)}
+                    {message.sources.map((source, sourceIndex) => {
+                      const sourceKey = `${index}:${sourceIndex}`;
+                      const saveState = sourceSaveState[sourceKey];
+                      return (
+                        <div key={source.url} style={{ marginTop: 8, padding: 8, borderRadius: 8, background: 'rgba(0,0,0,0.2)' }}>
+                          <a href={source.url} target="_blank" rel="noreferrer" style={{ display: 'block', color: '#60a5fa', fontSize: '0.78rem', overflowWrap: 'anywhere' }}>{source.title}</a>
+                          {!saveState && <button type="button" onClick={() => openSourceSave(sourceKey, source, message.question || '')} style={{ marginTop: 7, padding: '5px 8px', borderRadius: 6, background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.35)', color: '#34d399', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 700 }}>Save to Parts Catalog</button>}
+                          {saveState?.status === 'saved' && <div style={{ marginTop: 7, color: '#34d399', fontSize: '0.7rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}><CheckCircle size={12} /> {saveState.created ? `Saved to ${saveState.category}` : `Already saved in ${saveState.category}`}</div>}
+                          {saveState && saveState.status !== 'saved' && (
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 7 }}>
+                              <select aria-label={`Category for ${source.title}`} value={saveState.category} disabled={saveState.status === 'saving'} onChange={event => updateSourceSaveState(sourceKey, { category: event.target.value, status: 'choosing', error: '' })} style={{ flex: 1, minWidth: 160, padding: '5px 7px', borderRadius: 6, background: '#0b1714', border: '1px solid rgba(255,255,255,0.18)', color: '#f3f4f6', fontSize: '0.7rem' }}>
+                                {PART_CATEGORIES.map(category => <option key={category} value={category}>{category}</option>)}
+                              </select>
+                              <button type="button" disabled={saveState.status === 'saving'} onClick={() => saveSource(sourceKey, source)} style={{ padding: '5px 9px', borderRadius: 6, background: '#059669', border: 'none', color: '#fff', cursor: saveState.status === 'saving' ? 'wait' : 'pointer', fontSize: '0.7rem', fontWeight: 700 }}>{saveState.status === 'saving' ? 'Saving…' : 'Save link'}</button>
+                              <button type="button" disabled={saveState.status === 'saving'} onClick={() => setSourceSaveState(previous => { const next = { ...previous }; delete next[sourceKey]; return next; })} style={{ padding: '5px 7px', borderRadius: 6, background: 'transparent', border: '1px solid rgba(255,255,255,0.15)', color: '#9ca3af', cursor: 'pointer', fontSize: '0.7rem' }}>Cancel</button>
+                              {saveState.error && <div style={{ flexBasis: '100%', color: '#f87171', fontSize: '0.7rem' }}>{saveState.error}</div>}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
                 {message.externalConfirmation && (

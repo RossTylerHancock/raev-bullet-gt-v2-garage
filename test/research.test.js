@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { createRaevServer } from '../server/app.js';
+import { createPartsLinkStore } from '../server/partsLinks.js';
 import { createExternalRequest, createInternalRequest, researchQuestion } from '../server/research.js';
 
 test('internal request uses authoritative app context without web tools', () => {
@@ -81,6 +82,23 @@ test('approved external research uses web search and returns source metadata', a
   assert.deepEqual(result.sources, [{ title: 'Example part', url: 'https://example.com/part' }]);
 });
 
+test('owner-curated research links persist across store instances', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'raev-links-'));
+  const filePath = join(dataDir, 'research-links.json');
+  const firstStore = createPartsLinkStore({ filePath });
+  await firstStore.add({
+    title: 'Persistent handlebars',
+    url: 'https://example.com/persistent-bars',
+    category: 'Handlebars & Stem'
+  });
+
+  const restartedStore = createPartsLinkStore({ filePath });
+  const links = await restartedStore.list();
+  assert.equal(links.length, 1);
+  assert.equal(links[0].title, 'Persistent handlebars');
+  assert.equal(links[0].category, 'Handlebars & Stem');
+});
+
 let server;
 let baseUrl;
 let researchCalls;
@@ -93,6 +111,7 @@ before(async () => {
     ownerPin: '3520',
     sessionSecret: 'test-session-secret',
     distDir,
+    partsLinkStoreOptions: { filePath: join(distDir, 'research-links.json') },
     research: async input => {
       researchCalls.push(input);
       return {
@@ -150,4 +169,68 @@ test('server enforces PIN session and explicit web consent', async () => {
   });
   assert.equal(external.status, 200);
   assert.equal(researchCalls.at(-1).allowWeb, true);
+});
+
+test('owner can curate public categorized research links', async () => {
+  const emptyList = await fetch(`${baseUrl}/api/parts-links`);
+  assert.equal(emptyList.status, 200);
+  assert.deepEqual((await emptyList.json()).links, []);
+
+  const unauthenticatedSave = await fetch(`${baseUrl}/api/parts-links`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ title: 'Handlebar listing', url: 'https://example.com/bars', category: 'Handlebars & Stem' })
+  });
+  assert.equal(unauthenticatedSave.status, 401);
+
+  const unlock = await fetch(`${baseUrl}/api/auth/unlock`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ pin: '3520' })
+  });
+  const cookie = unlock.headers.get('set-cookie').split(';')[0];
+
+  const unsafeSave = await fetch(`${baseUrl}/api/parts-links`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({ title: 'Unsafe link', url: 'javascript:alert(1)', category: 'Handlebars & Stem' })
+  });
+  assert.equal(unsafeSave.status, 400);
+
+  const save = await fetch(`${baseUrl}/api/parts-links`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({ title: 'Handlebar listing', url: 'https://example.com/bars#details', category: 'Handlebars & Stem' })
+  });
+  assert.equal(save.status, 201);
+  const saved = await save.json();
+  assert.equal(saved.created, true);
+  assert.equal(saved.link.category, 'Handlebars & Stem');
+  assert.equal(saved.link.url, 'https://example.com/bars');
+
+  const duplicate = await fetch(`${baseUrl}/api/parts-links`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({ title: 'Same listing', url: 'https://example.com/bars', category: 'Handlebars & Stem' })
+  });
+  assert.equal(duplicate.status, 200);
+  assert.equal((await duplicate.json()).created, false);
+
+  const publicList = await fetch(`${baseUrl}/api/parts-links`);
+  const publicBody = await publicList.json();
+  assert.equal(publicBody.links.length, 1);
+  assert.equal(publicBody.links[0].title, 'Handlebar listing');
+
+  const unauthenticatedDelete = await fetch(`${baseUrl}/api/parts-links/${saved.link.id}`, { method: 'DELETE' });
+  assert.equal(unauthenticatedDelete.status, 401);
+
+  const remove = await fetch(`${baseUrl}/api/parts-links/${saved.link.id}`, {
+    method: 'DELETE',
+    headers: { cookie }
+  });
+  assert.equal(remove.status, 200);
+  assert.equal((await remove.json()).removed, true);
+
+  const finalList = await fetch(`${baseUrl}/api/parts-links`);
+  assert.deepEqual((await finalList.json()).links, []);
 });

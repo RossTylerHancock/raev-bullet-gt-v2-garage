@@ -14,6 +14,10 @@ The researcher uses `src/data/bikeData.js` as its primary, authoritative knowled
 
 There are no canned or random fallback answers. API failures are shown as errors rather than disguised as research.
 
+## Owner-saved research links
+
+Approved web-search sources can be saved from the AI Researcher into the existing Parts Catalog taxonomy. Guests can read saved links, while adding and removing links requires an authenticated owner session. Saved external listings are deliberately separated from verified fitment data and labeled as supplementary research leads.
+
 ## Run locally
 
 ```sh
@@ -45,5 +49,8 @@ Optional environment variables:
 
 - `OPENAI_MODEL`: defaults to `gpt-5.4-mini`.
 - `SESSION_SECRET`: stable random value used to keep sessions valid across restarts. If omitted, a new in-memory secret is generated at startup.
+- `RAEV_DATA_DIR`: directory containing owner-curated research links. Defaults to `/data` in production and `./data` locally.
+
+For durable saved links on Railway, attach a persistent volume to the service and mount it at `/data`. Without a volume, links written to the deployment container can disappear on a restart or redeploy.
 
 The `/api/health` endpoint reports only whether the researcher is configured and which model name is selected. It never returns credentials.
