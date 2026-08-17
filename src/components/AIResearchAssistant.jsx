@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Bot, CheckCircle, HelpCircle, KeyRound, Lock, Search, Send, ShieldAlert, Sparkles, Unlock, User } from 'lucide-react';
 
 const INITIAL_MESSAGE = {
@@ -31,6 +31,7 @@ export default function AIResearchAssistant() {
   const [messages, setMessages] = useState([INITIAL_MESSAGE]);
   const [inputQuery, setInputQuery] = useState('');
   const [isThinking, setIsThinking] = useState(false);
+  const conversationRef = useRef(null);
 
   useEffect(() => {
     let active = true;
@@ -40,6 +41,15 @@ export default function AIResearchAssistant() {
       .finally(() => { if (active) setCheckingAccess(false); });
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    const conversation = conversationRef.current;
+    if (!conversation) return;
+    conversation.scrollTo({
+      top: conversation.scrollHeight,
+      behavior: 'smooth'
+    });
+  }, [messages, isThinking]);
 
   const sampleQuestions = [
     'What replacement front forks can I use?',
@@ -75,14 +85,25 @@ export default function AIResearchAssistant() {
     setMessages([INITIAL_MESSAGE]);
   };
 
-  const submitResearch = async (question, allowWeb = false) => {
+  const submitResearch = async (question, allowWeb = false, confirmationIndex = null) => {
     if (!question.trim() || isThinking) return;
-    setMessages(previous => [...previous, {
-      sender: 'user',
-      text: allowWeb
-        ? 'Yes—research this online. Keep the app’s verified RAEV information authoritative.'
-        : question.trim()
-    }]);
+    setMessages(previous => [
+      ...previous.map((message, index) => index === confirmationIndex && message.externalConfirmation
+        ? {
+            ...message,
+            externalConfirmation: {
+              ...message.externalConfirmation,
+              status: 'searching'
+            }
+          }
+        : message),
+      {
+        sender: 'user',
+        text: allowWeb
+          ? 'Yes—research this online. Keep the app’s verified RAEV information authoritative.'
+          : question.trim()
+      }
+    ]);
     if (!allowWeb) setInputQuery('');
     setIsThinking(true);
     try {
@@ -90,19 +111,42 @@ export default function AIResearchAssistant() {
         method: 'POST',
         body: JSON.stringify({ question: question.trim(), allowWeb })
       });
-      setMessages(previous => [...previous, {
-        sender: 'ai',
-        text: result.answer,
-        sources: result.sources,
-        usedWeb: result.usedWeb,
-        externalConfirmation: result.needsExternalResearch ? {
-          question: question.trim(),
-          reason: result.externalResearchReason
-        } : null
-      }]);
+      setMessages(previous => [
+        ...previous.map((message, index) => index === confirmationIndex && message.externalConfirmation
+          ? {
+              ...message,
+              externalConfirmation: {
+                ...message.externalConfirmation,
+                status: 'completed'
+              }
+            }
+          : message),
+        {
+          sender: 'ai',
+          text: result.answer,
+          sources: result.sources,
+          usedWeb: result.usedWeb,
+          externalConfirmation: result.needsExternalResearch ? {
+            question: question.trim(),
+            reason: result.externalResearchReason,
+            status: 'awaiting'
+          } : null
+        }
+      ]);
     } catch (error) {
       if (error.status === 401) setIsUnlocked(false);
-      setMessages(previous => [...previous, { sender: 'ai', isError: true, text: error.message }]);
+      setMessages(previous => [
+        ...previous.map((message, index) => index === confirmationIndex && message.externalConfirmation
+          ? {
+              ...message,
+              externalConfirmation: {
+                ...message.externalConfirmation,
+                status: 'awaiting'
+              }
+            }
+          : message),
+        { sender: 'ai', isError: true, text: error.message }
+      ]);
     } finally {
       setIsThinking(false);
     }
@@ -172,7 +216,7 @@ export default function AIResearchAssistant() {
       </div>
 
       <div className="glass-card" style={{ padding: 24, display: 'flex', flexDirection: 'column', height: 560 }}>
-        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16, paddingRight: 6 }}>
+        <div ref={conversationRef} style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16, paddingRight: 6 }}>
           {messages.map((message, index) => (
             <div key={`${message.sender}-${index}`} style={{ display: 'flex', gap: 12, alignSelf: message.sender === 'user' ? 'flex-end' : 'flex-start', maxWidth: '88%' }}>
               {message.sender === 'ai' && <div style={{ width: 34, height: 34, borderRadius: 10, background: 'linear-gradient(135deg, #10b981, #047857)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Bot size={18} color="#fff" /></div>}
@@ -189,14 +233,18 @@ export default function AIResearchAssistant() {
                   <div style={{ marginTop: 14, padding: 12, borderRadius: 10, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)' }}>
                     <div style={{ color: '#fbbf24', fontWeight: 700, fontSize: '0.8rem' }}>Internal knowledge is incomplete</div>
                     <div style={{ color: '#d1d5db', fontSize: '0.78rem', margin: '4px 0 10px' }}>{message.externalConfirmation.reason}</div>
-                    <button disabled={isThinking} onClick={() => submitResearch(message.externalConfirmation.question, true)} style={{ background: '#d97706', border: 'none', borderRadius: 8, color: '#fff', padding: '8px 12px', cursor: 'pointer', fontWeight: 700, fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: 6 }}><Search size={14} /> Approve online research</button>
+                    {message.externalConfirmation.status === 'completed' ? (
+                      <div style={{ color: '#34d399', fontWeight: 700, fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: 6 }}><CheckCircle size={14} /> Online research approved</div>
+                    ) : (
+                      <button type="button" disabled={isThinking || message.externalConfirmation.status === 'searching'} onClick={() => submitResearch(message.externalConfirmation.question, true, index)} style={{ background: '#d97706', border: 'none', borderRadius: 8, color: '#fff', padding: '8px 12px', cursor: isThinking ? 'wait' : 'pointer', fontWeight: 700, fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: 6 }}><Search size={14} /> {message.externalConfirmation.status === 'searching' ? 'Searching online…' : 'Approve online research'}</button>
+                    )}
                   </div>
                 )}
               </div>
               {message.sender === 'user' && <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><User size={18} color="#fff" /></div>}
             </div>
           ))}
-          {isThinking && <div style={{ display: 'flex', gap: 10, alignItems: 'center', color: '#9ca3af', fontSize: '0.8rem' }}><Bot size={18} color="#34d399" /> Researching the verified RAEV knowledge base…</div>}
+          {isThinking && <div aria-live="polite" style={{ display: 'flex', gap: 10, alignItems: 'center', color: '#9ca3af', fontSize: '0.8rem' }}><Bot size={18} color="#34d399" /> Researching the verified RAEV knowledge base…</div>}
         </div>
         <form onSubmit={event => { event.preventDefault(); submitResearch(inputQuery); }} style={{ display: 'flex', gap: 10, marginTop: 16, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 16 }}>
           <input type="text" maxLength={2000} placeholder="Ask any question about your RAEV Bullet GT V2…" value={inputQuery} onChange={event => setInputQuery(event.target.value)} disabled={isThinking} style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 10, padding: '12px 16px', color: '#fff', fontSize: '0.9rem', outline: 'none' }} />
